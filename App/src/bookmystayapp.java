@@ -1,8 +1,8 @@
-// Version 5.0
+// Version 6.0
 
 import java.util.*;
 
-// ---------------------- RESERVATION CLASS ----------------------
+// ---------------------- RESERVATION ----------------------
 class Reservation {
     private String guestName;
     private String roomType;
@@ -19,42 +19,121 @@ class Reservation {
     public String getRoomType() {
         return roomType;
     }
+}
 
-    public void displayRequest() {
-        System.out.println("Guest: " + guestName + " | Requested Room: " + roomType);
+// ---------------------- INVENTORY SERVICE ----------------------
+class RoomInventory {
+    private HashMap<String, Integer> inventory;
+
+    public RoomInventory() {
+        inventory = new HashMap<>();
+        inventory.put("Single Room", 2);
+        inventory.put("Double Room", 1);
+        inventory.put("Suite Room", 1);
     }
 
+    public int getAvailability(String roomType) {
+        return inventory.getOrDefault(roomType, 0);
+    }
+
+    public void decrementRoom(String roomType) {
+        int current = inventory.getOrDefault(roomType, 0);
+        if (current > 0) {
+            inventory.put(roomType, current - 1);
+        }
+    }
+
+    public void displayInventory() {
+        System.out.println("\n=== Current Inventory ===");
+        for (Map.Entry<String, Integer> entry : inventory.entrySet()) {
+            System.out.println(entry.getKey() + " → " + entry.getValue());
+        }
+    }
 }
 
 // ---------------------- BOOKING REQUEST QUEUE ----------------------
 class BookingRequestQueue {
+    private Queue<Reservation> queue = new LinkedList<>();
 
-    private Queue<Reservation> queue;
-
-    public BookingRequestQueue() {
-        queue = new LinkedList<>();
+    public void addRequest(Reservation r) {
+        queue.offer(r);
     }
 
-    // Add booking request (enqueue)
-    public void addRequest(Reservation reservation) {
-        queue.offer(reservation);
-        System.out.println("Request Added: ");
-        reservation.displayRequest();
-        System.out.println("---------------------------");
+    public Reservation getNextRequest() {
+        return queue.poll(); // FIFO removal
     }
 
-    // View all requests (without removing)
-    public void displayQueue() {
-        System.out.println("\n=== Booking Request Queue (FIFO Order) ===\n");
+    public boolean isEmpty() {
+        return queue.isEmpty();
+    }
+}
 
-        for (Reservation r : queue) {
-            r.displayRequest();
+// ---------------------- BOOKING SERVICE ----------------------
+class BookingService {
+
+    private RoomInventory inventory;
+
+    // Track allocated room IDs globally
+    private Set<String> allocatedRoomIds = new HashSet<>();
+
+    // Map room type → allocated room IDs
+    private HashMap<String, Set<String>> allocationMap = new HashMap<>();
+
+    public BookingService(RoomInventory inventory) {
+        this.inventory = inventory;
+    }
+
+    // Generate unique room ID
+    private String generateRoomId(String roomType) {
+        String base = roomType.substring(0, 2).toUpperCase();
+        String id;
+
+        do {
+            id = base + "-" + (100 + new Random().nextInt(900));
+        } while (allocatedRoomIds.contains(id));
+
+        return id;
+    }
+
+    // Process booking (Atomic logical operation)
+    public void processBooking(Reservation r) {
+
+        String type = r.getRoomType();
+        int available = inventory.getAvailability(type);
+
+        System.out.println("\nProcessing: " + r.getGuestName() + " → " + type);
+
+        if (available <= 0) {
+            System.out.println("❌ Booking Failed: No rooms available.");
+            return;
         }
+
+        // Generate unique room ID
+        String roomId = generateRoomId(type);
+
+        // Ensure uniqueness (Set)
+        allocatedRoomIds.add(roomId);
+
+        // Map room type → room IDs
+        allocationMap.putIfAbsent(type, new HashSet<>());
+        allocationMap.get(type).add(roomId);
+
+        // Update inventory immediately
+        inventory.decrementRoom(type);
+
+        // Confirmation
+        System.out.println("✅ Booking Confirmed!");
+        System.out.println("Guest: " + r.getGuestName());
+        System.out.println("Room Type: " + type);
+        System.out.println("Allocated Room ID: " + roomId);
     }
 
-    // Peek next request (no removal)
-    public Reservation peekNext() {
-        return queue.peek();
+    public void displayAllocations() {
+        System.out.println("\n=== Allocation Summary ===");
+
+        for (Map.Entry<String, Set<String>> entry : allocationMap.entrySet()) {
+            System.out.println(entry.getKey() + " → " + entry.getValue());
+        }
     }
 }
 
@@ -63,28 +142,30 @@ public class bookmystayapp {
 
     public static void main(String[] args) {
 
-        // Initialize Booking Queue
-        BookingRequestQueue bookingQueue = new BookingRequestQueue();
+        // Initialize Inventory
+        RoomInventory inventory = new RoomInventory();
 
-        // Simulate Guest Requests (Arrival Order)
-        Reservation r1 = new Reservation("Alice", "Single Room");
-        Reservation r2 = new Reservation("Bob", "Double Room");
-        Reservation r3 = new Reservation("Charlie", "Suite Room");
+        // Initialize Queue
+        BookingRequestQueue queue = new BookingRequestQueue();
 
-        // Add requests to queue (FIFO)
-        bookingQueue.addRequest(r1);
-        bookingQueue.addRequest(r2);
-        bookingQueue.addRequest(r3);
+        // Add booking requests (FIFO)
+        queue.addRequest(new Reservation("Alice", "Single Room"));
+        queue.addRequest(new Reservation("Bob", "Single Room"));
+        queue.addRequest(new Reservation("Charlie", "Single Room")); // should fail
+        queue.addRequest(new Reservation("David", "Suite Room"));
 
-        // Display all queued requests
-        bookingQueue.displayQueue();
+        // Initialize Booking Service
+        BookingService bookingService = new BookingService(inventory);
 
-        // Peek next request (First-Come)
-        System.out.println("\nNext Request to Process:");
-        Reservation next = bookingQueue.peekNext();
-        if (next != null) {
-            next.displayRequest();
+        // Process Queue
+        while (!queue.isEmpty()) {
+            Reservation r = queue.getNextRequest();
+            bookingService.processBooking(r);
         }
+
+        // Display results
+        bookingService.displayAllocations();
+        inventory.displayInventory();
 
         System.out.println("\nApplication Terminated.");
     }
