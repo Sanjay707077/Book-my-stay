@@ -23,6 +23,7 @@ class Reservation {
     public void displayRequest() {
         System.out.println("Guest: " + guestName + " | Requested Room: " + roomType);
     }
+
 }
 
 // ---------------------- BOOKING REQUEST QUEUE ----------------------
